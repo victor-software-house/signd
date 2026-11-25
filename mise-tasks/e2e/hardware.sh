@@ -160,8 +160,13 @@ sign_request() {
 }
 
 # The chain length that `tls list --json` shows for an identity; nothing when the list lacks it.
-tls_chain_length() {
+# Runs outside a command substitution, so a failed listing ends the script.
+tls_list() {
   "$signd" tls list --json > "$work/tls-list.json" || fail "tls list failed"
+}
+
+# Prints the chain length of the identity in the saved listing, or nothing.
+tls_chain_length() {
   index=0
   while listed=$(plutil -extract "$index.name" raw "$work/tls-list.json" 2> /dev/null); do
     if [ "$listed" = "$1" ]; then
@@ -177,6 +182,7 @@ if "$signd" tls create "$tls" 2> /dev/null; then fail "tls create replaced an id
 if "$signd" key list | grep -q "$tls"; then fail "key list shows the TLS identity"; fi
 sign_request "$tls"
 cat "$work/$tls.pem" "$work/ca.pem" | "$signd" tls store "$tls" || fail "tls store refused the chain signed for its key"
+tls_list
 [ "$(tls_chain_length "$tls")" = 2 ] || fail "tls list does not show the stored chain of 2 certificates"
 
 "$signd" tls create "$tls-other" || fail "tls create failed for the second identity"
@@ -185,6 +191,7 @@ if cat "$work/$tls-other.pem" "$work/ca.pem" | "$signd" tls store "$tls" 2> "$wo
 grep -q 'another key' "$work/mismatch.err" || fail "the refusal of a chain for another key does not name the mismatch"
 
 "$signd" tls remove "$tls" || fail "tls remove failed"
+tls_list
 [ -z "$(tls_chain_length "$tls")" ] || fail "tls list still shows the removed identity"
 "$signd" tls remove "$tls-other" || fail "tls remove failed for the second identity"
 if "$signd" tls remove "$tls" 2> /dev/null; then fail "tls remove succeeded for a removed identity"; fi
