@@ -25,7 +25,7 @@ let package = Package(
         .package(url: "https://github.com/tuist/Noora.git", exact: "0.57.7"),
         .package(url: "https://github.com/onevcat/Rainbow.git", exact: "4.2.2"),
         .package(url: "https://github.com/victor-software-house/swift-onepassword.git", exact: "0.0.4"),
-        .package(url: "https://github.com/victor-software-house/swift-daemon-services.git", exact: "0.0.1"),
+        .package(url: "https://github.com/victor-software-house/swift-daemon-services.git", exact: "0.0.2"),
     ],
     targets: [
         // The SSH encoding of keys and signatures, with no platform code.
