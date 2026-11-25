@@ -203,6 +203,29 @@ signd status                                                   # iCloud state, t
 > Sharing needs the notarized release: only its provisioning profile grants signd's iCloud container.
 > A build from source keeps every key on its Mac, and `signd status` shows sync as off.
 
+## TLS identities
+
+A TLS client identity is a Secure Enclave key with the certificate chain a certificate authority signed for it.
+signd makes the key and stores the chain.
+It does not choose the subject, the authority, or the program that presents the identity.
+
+```sh
+signd tls create mirror                                             # a Secure Enclave P-256 key; prints nothing
+signd tls csr mirror --common-name mirror --organization Example   # a certificate signing request, in PEM
+signd tls store mirror < chain.pem                                  # the PEM chain the authority returned, leaf first
+signd tls remove mirror                                             # deletes the key and its chain
+```
+
+`csr` signs the request with the key and takes the common name and, when given, the organization as the subject.
+Send the request to your own authority, and pipe the chain it returns to `store`.
+`store` refuses a chain whose leaf carries another key, and keeps what was stored before.
+
+The identities live in the keychain group `com.victor-software-house.identities`, which the entitlements list after signd's own group.
+Another app of the same team reaches them by listing that group in its own entitlements.
+
+The release's Developer ID profile must allow the group; a profile that lists `<team>.*` does.
+An identity stays on its Mac: iCloud never shares it, no backup copies it, and the SSH agent never offers it.
+
 ## Backup to 1Password
 
 A Mac that stores a 1Password service account token copies the shared keys to a vault.

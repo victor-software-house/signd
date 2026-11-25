@@ -4,8 +4,9 @@ import KeychainIdentity
 import SwiftASN1
 import X509
 
-/// `signd tls`: TLS client identities, each a Secure Enclave key with the certificate chain stored for it.
-/// They live in their own keychain group, away from the SSH keys, and the agent never offers them.
+/// `signd tls`: TLS client identities.
+/// Each is a Secure Enclave key with the chain stored for it.
+/// They have their own keychain group, apart from the SSH keys, and the agent never offers them.
 struct TLSCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "tls",
