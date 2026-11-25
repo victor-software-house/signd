@@ -31,16 +31,36 @@ private func pem(_ certificates: [Certificate]) throws -> Data {
 @Test func theTLSCommandsTakeTheIdentityName() throws {
     #expect(try TLSCommand.Create.parse(["mirror"]).name == "mirror")
     #expect(try TLSCommand.Store.parse(["mirror"]).name == "mirror")
+    let request = try TLSCommand.CSR.parse(["mirror", "--common-name", "alpha", "--organization", "Example"])
+    #expect(request.name == "mirror")
+    #expect(request.commonName == "alpha")
+    #expect(request.organization == "Example")
+    #expect(try TLSCommand.CSR.parse(["mirror", "--common-name", "alpha"]).organization == nil)
     #expect(try TLSCommand.Remove.parse(["mirror"]).name == "mirror")
     #expect(throws: (any Error).self) { try TLSCommand.Create.parse([]) }
     #expect(throws: (any Error).self) { try TLSCommand.Store.parse([]) }
+    #expect(throws: (any Error).self) { try TLSCommand.CSR.parse(["mirror"]) }
+    #expect(throws: (any Error).self) { try TLSCommand.CSR.parse(["--common-name", "alpha"]) }
     #expect(throws: (any Error).self) { try TLSCommand.Remove.parse([]) }
 }
 
 @Test func theRootCommandRoutesTLSToItsSubcommands() throws {
     #expect((try Signd.parseAsRoot(["tls", "create", "mirror"]) as? TLSCommand.Create)?.name == "mirror")
+    #expect((try Signd.parseAsRoot(["tls", "csr", "mirror", "--common-name", "alpha"]) as? TLSCommand.CSR)?.commonName == "alpha")
     #expect((try Signd.parseAsRoot(["tls", "store", "mirror"]) as? TLSCommand.Store)?.name == "mirror")
     #expect((try Signd.parseAsRoot(["tls", "remove", "mirror"]) as? TLSCommand.Remove)?.name == "mirror")
+}
+
+@Test func theSubjectHasTheCommonNameAndTheOrganizationWhenGiven() throws {
+    #expect(String(describing: try TLSCommand.subject(commonName: "alpha", organization: "Example")) == "CN=alpha,O=Example")
+    #expect(String(describing: try TLSCommand.subject(commonName: "alpha", organization: nil)) == "CN=alpha")
+}
+
+@Test func anEmptyCommonNameOrOrganizationIsRefused() {
+    let commonName = #expect(throws: Failure.self) { try TLSCommand.subject(commonName: "", organization: nil) }
+    #expect(commonName?.description == "the common name is empty")
+    let organization = #expect(throws: Failure.self) { try TLSCommand.subject(commonName: "alpha", organization: "") }
+    #expect(organization?.description == "the organization is empty")
 }
 
 @Test func aChainReadsLeafFirst() throws {

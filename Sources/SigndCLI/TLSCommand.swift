@@ -9,8 +9,8 @@ import X509
 struct TLSCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "tls",
-        abstract: "Create, store and remove TLS client identities.",
-        subcommands: [Create.self, Store.self, Remove.self]
+        abstract: "Create, sign for, store and remove TLS client identities.",
+        subcommands: [Create.self, CSR.self, Store.self, Remove.self]
     )
 
     /// The keychain access group of the identities, without the team identifier that comes in front of it.
@@ -45,6 +45,20 @@ struct TLSCommand: ParsableCommand {
         }
     }
 
+    /// The subject of a certificate request: the common name, and the organization when there is one.
+    static func subject(commonName: String, organization: String?) throws -> DistinguishedName {
+        guard !commonName.isEmpty else { throw Failure("the common name is empty") }
+        if organization?.isEmpty == true { throw Failure("the organization is empty") }
+        do {
+            return try DistinguishedName {
+                if let organization { OrganizationName(organization) }
+                CommonName(commonName)
+            }
+        } catch {
+            throw Failure("the subject cannot be built: \(error)")
+        }
+    }
+
     /// The certificates of a PEM chain, in the order they are written: the leaf first.
     static func parseChain(_ data: Data) throws -> [Certificate] {
         let documents: [PEMDocument]
@@ -69,6 +83,28 @@ struct TLSCommand: ParsableCommand {
         func run() throws {
             let store = try TLSCommand.openStore()
             do { _ = try store.create(name: name) } catch { throw TLSCommand.failure(error) }
+        }
+    }
+
+    struct CSR: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "csr",
+            abstract: "Print a certificate signing request for a TLS identity, in PEM, signed by its key.",
+            discussion: "Send the request to a certificate authority, then pipe the chain it returns to signd tls store."
+        )
+        @Argument(help: "The identity's name.") var name: String
+        @Option(help: "The subject's common name.") var commonName: String
+        @Option(help: "The subject's organization; none when omitted.") var organization: String?
+
+        func run() throws {
+            let subject = try TLSCommand.subject(commonName: commonName, organization: organization)
+            let store = try TLSCommand.openStore()
+            do {
+                guard let identity = try store.identity(named: name) else { throw KeychainIdentityError.notFound(name: name) }
+                print(try store.signingRequest(for: identity, subject: subject).pem)
+            } catch {
+                throw TLSCommand.failure(error)
+            }
         }
     }
 
