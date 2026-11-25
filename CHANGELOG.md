@@ -1,5 +1,10 @@
 # Changelog
 
+## signd 0.0.22
+
+- The installer package now needs macOS 27, as the app does.
+  The release builds the package again ([`5197ed0`](https://github.com/victor-software-house/signd/commit/5197ed0e28aea4f89680585978ab0f02f9021d25)).
+
 ## signd 0.0.21
 
 - `signd tls list` shows each TLS identity: its name, the subject, issuer and expiry of its leaf, and its chain length.
