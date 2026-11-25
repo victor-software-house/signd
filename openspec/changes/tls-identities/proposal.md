@@ -15,7 +15,7 @@ signd does not decide who signs the certificate or which program presents it.
 ## What Changes
 
 - `signd tls create NAME` makes a Secure Enclave P-256 key in the keychain group `com.victor-software-house.identities`.
-- `signd tls csr NAME --subject DN` prints a certificate signing request for it, in PEM.
+- `signd tls csr NAME --common-name CN [--organization O]` prints a certificate signing request for it, in PEM, with that subject.
 - `signd tls store NAME` reads a PEM chain, leaf first, from stdin and stores it when its leaf matches the key.
 - `signd tls list` shows each identity's name, subject, issuer, expiry and chain length; `--json` prints the same.
 - `signd tls remove NAME` deletes the key and its chain.
