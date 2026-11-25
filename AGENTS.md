@@ -14,7 +14,8 @@ The `signd` executable is both the command line and the agent.
 
 1. No command and no message exports a private key.
 2. Stored keys live in the data-protection keychain, in signd's access group.
-   They are readable after first unlock, on this device only.
+   TLS identities live in a second group, `com.victor-software-house.identities`, listed after the first.
+   Both are readable after first unlock, on this device only.
    The code contains no team identifier, and the entitlements come from the provisioning profile at release time.
 3. A signature never runs on the event loop or inside the agent actor.
    It runs on the thread pool, so a slow Secure Enclave call delays no other client.
