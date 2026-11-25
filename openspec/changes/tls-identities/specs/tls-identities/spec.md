@@ -1,10 +1,17 @@
 ## ADDED Requirements
 
-### Requirement: signd makes and stores TLS client identities
+### Requirement: signd makes TLS client identities
 
 `signd tls create NAME` SHALL create a Secure Enclave P-256 key in the keychain group `com.victor-software-house.identities`.
 `signd tls csr NAME --common-name CN [--organization O]` SHALL print a certificate signing request in PEM, signed by that key.
 Its subject SHALL be the common name, and the organization when given.
+
+#### Scenario: A name in use
+
+- **WHEN** `signd tls create mirror` runs while an identity named `mirror` exists
+- **THEN** the command fails and changes nothing
+
+### Requirement: signd stores and removes a TLS identity
 
 `signd tls store NAME` SHALL read a PEM chain, leaf first, from stdin, and SHALL store it only when the leaf's public key is the identity's key.
 `signd tls remove NAME` SHALL delete the key and its chain.
@@ -18,11 +25,6 @@ Its subject SHALL be the common name, and the organization when given.
 
 - **WHEN** `signd tls store mirror` reads a chain whose leaf contains another key
 - **THEN** the command fails, names the mismatch, and stores nothing
-
-#### Scenario: A name in use
-
-- **WHEN** `signd tls create mirror` runs while an identity named `mirror` exists
-- **THEN** the command fails and changes nothing
 
 ### Requirement: TLS identities stay on the Mac and out of the agent
 
