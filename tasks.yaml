@@ -117,6 +117,17 @@ queue:
     notes:
       - '2026-11-19: the updater answers a request within 5 minutes of a check with the recorded result. After the update to 0.0.18 at 23:10:59 UTC, each later signd update printed installed 0.0.18; the agents restart on it, though no new install ran.'
       - '2026-11-20: signd #102 shipped in 0.0.19. The 0.0.18 updater recorded no install time, so a repeat right after the 0.0.19 install still read as an update; after the 5-minute window, signd update printed signd is up to date (0.0.19). The acceptance is checked at the 0.0.20 install, the first one a 0.0.19 updater runs.'
+
+  - id: SGD-020
+    title: TLS client identities
+    scope: tls
+    outcome: >-
+      A setup script makes a Secure Enclave TLS identity with signd, has it signed
+      and stores its chain.
+    blocked_by: []
+    acceptance:
+      - openspec/changes/tls-identities/tasks.md has every task checked off with its proof.
+    plan: openspec/changes/tls-identities/proposal.md
 archive:
   - id: SGD-008
     title: Terminal output with Noora
