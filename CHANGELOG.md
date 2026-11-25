@@ -1,5 +1,15 @@
 # Changelog
 
+## signd 0.0.20
+
+- `signd tls` makes TLS client identities.
+  `create` makes a Secure Enclave key, and `csr` prints a signing request for it.
+  `store` keeps the PEM chain that a certificate authority signed, and `remove` deletes the identity ([`4002eee`](https://github.com/victor-software-house/signd/commit/4002eee192b1ecb2deb8552bcd81e75f5ddadb81)).
+
+  The identities have their own keychain group, listed after signd's own in the entitlements.
+  The SSH agent never offers them.
+  signd now needs macOS 27.
+
 ## signd 0.0.19
 
 - Command messages read as plain English.
