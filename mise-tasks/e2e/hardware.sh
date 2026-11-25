@@ -8,11 +8,15 @@ app=${SIGND_APP:-/Applications/Signd.app}
 signd=$app/Contents/MacOS/signd
 work=$(mktemp -d)
 name=e2e-hw-$$
+tls=e2e-tls-$$
 export SSH_AUTH_SOCK=$HOME/.ssh/signd.sock
 
 cleanup() {
   for suffix in "" -ed -rsa -imp -prot -bad -small; do
     "$signd" key delete "$name$suffix" 2> /dev/null || true
+  done
+  for identity in "$tls" "$tls-other"; do
+    "$signd" tls remove "$identity" 2> /dev/null || true
   done
   "$signd" config unset key-lifetime
   rm -rf "$work"
@@ -142,4 +146,32 @@ if "$signd" key import "$name-small" "$work/small" --local > /dev/null 2> "$work
 grep -q 'RSA 1024' "$work/small.err" || fail "the refusal of an RSA 1024 key does not name it"
 if "$signd" key list | grep -q "^$name-small "; then fail "the refused RSA 1024 key is listed"; fi
 
-echo "✔ Secure Enclave key created, listed, signed before and after an agent restart (screen locked: $locked), hidden from an ad-hoc probe (status $status), dropped from memory after its lifetime, and deleted; wrapped Ed25519 and RSA keys created, an Ed25519 key imported from stdin, a protected key imported through ssh-add, and an RSA 1024 key refused"
+# A TLS identity: create, sign its request with a test authority, store the chain, refuse another key's chain, remove.
+openssl ecparam -name prime256v1 -genkey -noout -out "$work/ca.key"
+openssl req -new -x509 -key "$work/ca.key" -subj "/CN=e2e-authority" -days 1 -out "$work/ca.pem"
+printf 'extendedKeyUsage=clientAuth\n' > "$work/client.ext"
+
+sign_request() {
+  "$signd" tls csr "$1" --common-name "$1" --organization e2e > "$work/$1.csr" || fail "tls csr failed for $1"
+  openssl req -in "$work/$1.csr" -noout -verify 2> /dev/null || fail "the request of $1 does not verify"
+  openssl req -in "$work/$1.csr" -noout -subject | grep -q "$1" || fail "the request of $1 does not carry its common name"
+  openssl x509 -req -in "$work/$1.csr" -CA "$work/ca.pem" -CAkey "$work/ca.key" -CAcreateserial -days 1 -extfile "$work/client.ext" \
+    -out "$work/$1.pem" 2> /dev/null || fail "the test authority did not sign the request of $1"
+}
+
+"$signd" tls create "$tls" || fail "tls create failed"
+if "$signd" tls create "$tls" 2> /dev/null; then fail "tls create replaced an identity that exists"; fi
+if "$signd" key list | grep -q "$tls"; then fail "key list shows the TLS identity"; fi
+sign_request "$tls"
+cat "$work/$tls.pem" "$work/ca.pem" | "$signd" tls store "$tls" || fail "tls store refused the chain signed for its key"
+
+"$signd" tls create "$tls-other" || fail "tls create failed for the second identity"
+sign_request "$tls-other"
+if cat "$work/$tls-other.pem" "$work/ca.pem" | "$signd" tls store "$tls" 2> "$work/mismatch.err"; then fail "tls store took a chain for another key"; fi
+grep -q 'another key' "$work/mismatch.err" || fail "the refusal of a chain for another key does not name the mismatch"
+
+"$signd" tls remove "$tls" || fail "tls remove failed"
+"$signd" tls remove "$tls-other" || fail "tls remove failed for the second identity"
+if "$signd" tls remove "$tls" 2> /dev/null; then fail "tls remove succeeded for a removed identity"; fi
+
+echo "✔ Secure Enclave key created, listed, signed before and after an agent restart (screen locked: $locked), hidden from an ad-hoc probe (status $status), dropped from memory after its lifetime, and deleted; wrapped Ed25519 and RSA keys created, an Ed25519 key imported from stdin, a protected key imported through ssh-add, and an RSA 1024 key refused; a TLS identity created, signed through a test authority, stored, kept apart from a chain for another key, and removed"
