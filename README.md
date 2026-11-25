@@ -213,6 +213,7 @@ It does not choose the subject, the authority, or the program that presents the 
 signd tls create mirror                                             # a Secure Enclave P-256 key; prints nothing
 signd tls csr mirror --common-name mirror --organization Example   # a certificate signing request, in PEM
 signd tls store mirror < chain.pem                                  # the PEM chain the authority returned, leaf first
+signd tls list [--json]                                             # each identity's subject, issuer, expiry and chain length
 signd tls remove mirror                                             # deletes the key and its chain
 ```
 

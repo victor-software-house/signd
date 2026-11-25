@@ -49,6 +49,72 @@ private func pem(_ certificates: [Certificate]) throws -> Data {
     #expect((try Signd.parseAsRoot(["tls", "csr", "mirror", "--common-name", "alpha"]) as? TLSCommand.CSR)?.commonName == "alpha")
     #expect((try Signd.parseAsRoot(["tls", "store", "mirror"]) as? TLSCommand.Store)?.name == "mirror")
     #expect((try Signd.parseAsRoot(["tls", "remove", "mirror"]) as? TLSCommand.Remove)?.name == "mirror")
+    #expect(try Signd.parseAsRoot(["tls", "list"]) is TLSCommand.List)
+}
+
+@Test func theListTakesTheJSONFlag() throws {
+    #expect(try TLSCommand.List.parse([]).output.json == false)
+    #expect(try TLSCommand.List.parse(["--json"]).output.json == true)
+    #expect((try Signd.parseAsRoot(["tls", "list", "--json"]) as? TLSCommand.List)?.output.json == true)
+    #expect(throws: (any Error).self) { try TLSCommand.List.parse(["mirror"]) }
+}
+
+/// The two-certificate chain of the listing tests: a leaf and its authority.
+private func listedChain() throws -> [Certificate] {
+    let authorityKey = P256.Signing.PrivateKey()
+    let authority = try certificate("authority", key: authorityKey, issuer: "authority", issuerKey: authorityKey)
+    let leaf = try certificate("leaf", key: P256.Signing.PrivateKey(), issuer: "authority", issuerKey: authorityKey)
+    return [leaf, authority]
+}
+
+private func json(_ rows: [TLSCommand.IdentityRow]) throws -> [[String: Any]] {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let data = try encoder.encode(rows)
+    return try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+}
+
+@Test func theRowOfAnIdentityWithAChainShowsItsLeaf() throws {
+    let chain = try listedChain()
+    let row = TLSCommand.row(name: "mirror", chain: chain)
+    #expect(row.name == "mirror")
+    #expect(row.subject == "CN=leaf")
+    #expect(row.issuer == "CN=authority")
+    #expect(row.expiry == chain[0].notValidAfter)
+    #expect(row.chainLength == 2)
+}
+
+@Test func theRowOfAnIdentityWithoutAChainHasNoSubjectIssuerOrExpiry() {
+    let row = TLSCommand.row(name: "mirror", chain: [])
+    #expect(row == TLSCommand.IdentityRow(name: "mirror", subject: nil, issuer: nil, expiry: nil, chainLength: 0))
+}
+
+@Test func theTextLineSeparatesTheFieldsByTwoSpaces() throws {
+    let chain = try listedChain()
+    let line = TLSCommand.row(name: "mirror", chain: chain).text
+    #expect(line == "mirror  CN=leaf  CN=authority  expires \(chain[0].notValidAfter.formatted(.iso8601))  chain=2")
+    #expect(TLSCommand.row(name: "mirror", chain: []).text == "mirror  waiting for a certificate")
+}
+
+@Test func theJSONListingHasTheFieldsAndTheExpiryInISO8601() throws {
+    let chain = try listedChain()
+    let rows = try json([TLSCommand.row(name: "mirror", chain: chain)])
+    #expect(rows.count == 1)
+    #expect(rows[0]["name"] as? String == "mirror")
+    #expect(rows[0]["subject"] as? String == "CN=leaf")
+    #expect(rows[0]["issuer"] as? String == "CN=authority")
+    #expect(rows[0]["expiry"] as? String == chain[0].notValidAfter.formatted(.iso8601))
+    #expect(rows[0]["chainLength"] as? Int == 2)
+}
+
+@Test func theJSONListingOfAnIdentityWithoutAChainHasNoSubjectIssuerOrExpiry() throws {
+    let rows = try json([TLSCommand.row(name: "mirror", chain: [])])
+    #expect(rows.count == 1)
+    #expect(rows[0]["name"] as? String == "mirror")
+    #expect(rows[0]["subject"] == nil)
+    #expect(rows[0]["issuer"] == nil)
+    #expect(rows[0]["expiry"] == nil)
+    #expect(rows[0]["chainLength"] as? Int == 0)
 }
 
 @Test func theSubjectHasTheCommonNameAndTheOrganizationWhenGiven() throws {

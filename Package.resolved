@@ -1,5 +1,5 @@
 {
-  "originHash" : "f99ad32bb001946e8f42b5cee4601be7de6baf517f6cb3501796998f80336806",
+  "originHash" : "ee179f2ce037d10f717d3d7056de73b20c5d72fff4b44c10ca0c4b47c51bdcea",
   "pins" : [
     {
       "identity" : "noora",
@@ -87,8 +87,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/victor-software-house/swift-daemon-services.git",
       "state" : {
-        "revision" : "ce639d0c691911fd57e0025aab57e490a7430191",
-        "version" : "0.0.1"
+        "revision" : "778f9f0083d4cffc11e3590cad17181edf555167",
+        "version" : "0.0.2"
       }
     },
     {

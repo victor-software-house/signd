@@ -11,7 +11,7 @@ struct TLSCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "tls",
         abstract: "Create, sign for, store and remove TLS client identities.",
-        subcommands: [Create.self, CSR.self, Store.self, Remove.self]
+        subcommands: [Create.self, CSR.self, Store.self, List.self, Remove.self]
     )
 
     /// The keychain access group of the identities, without the team identifier that comes in front of it.
@@ -77,6 +77,34 @@ struct TLSCommand: ParsableCommand {
         }
     }
 
+    /// An identity as `tls list` prints it.
+    /// An identity with no chain yet has no subject, issuer or expiry.
+    struct IdentityRow: Encodable, Equatable {
+        let name: String
+        let subject: String?
+        let issuer: String?
+        let expiry: Date?
+        let chainLength: Int
+
+        /// The line of the text listing, with the fields apart by two spaces like `key list`.
+        var text: String {
+            guard let subject, let issuer, let expiry else { return [name, "waiting for a certificate"].joined(separator: "  ") }
+            return [name, subject, issuer, "expires \(expiry.formatted(.iso8601))", "chain=\(chainLength)"].joined(separator: "  ")
+        }
+    }
+
+    /// The row of an identity: its leaf, the first certificate of the chain, gives the subject, issuer and expiry.
+    static func row(name: String, chain: [Certificate]) -> IdentityRow {
+        let leaf = chain.first
+        return IdentityRow(
+            name: name,
+            subject: leaf.map { String(describing: $0.subject) },
+            issuer: leaf.map { String(describing: $0.issuer) },
+            expiry: leaf?.notValidAfter,
+            chainLength: chain.count
+        )
+    }
+
     struct Create: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Create the Secure Enclave key of a TLS identity.")
         @Argument(help: "The identity's name, unique among the TLS identities.") var name: String
@@ -125,6 +153,28 @@ struct TLSCommand: ParsableCommand {
             } catch {
                 throw TLSCommand.failure(error)
             }
+        }
+    }
+
+    struct List: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "List the TLS identities with the subject, issuer and expiry of each one's leaf certificate.",
+            discussion: "An identity that has no chain yet shows as waiting for a certificate."
+        )
+        @OptionGroup var output: JSONOption
+
+        func run() throws {
+            let store = try TLSCommand.openStore()
+            let rows: [IdentityRow]
+            do {
+                rows = try store.names().compactMap { name in
+                    try store.identity(named: name).map { TLSCommand.row(name: $0.name, chain: $0.chain) }
+                }
+            } catch {
+                throw TLSCommand.failure(error)
+            }
+            if output.json { return try output.print(rows) }
+            for row in rows { print(row.text) }
         }
     }
 
