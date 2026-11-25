@@ -42,7 +42,7 @@ distribution() {
   xmllint --xpath "$1" build/expanded/Distribution
 }
 
-# Package.swift's .macOS(.v26) is macOS 26.0.
+# Package.swift's .macOS(.v27) is macOS 27.0.
 floor=$(sed -n 's/.*\.macOS(\.v\([0-9]*\)).*/\1.0/p' Package.swift)
 [ -n "$floor" ] || fail "Package.swift names no macOS deployment target"
 

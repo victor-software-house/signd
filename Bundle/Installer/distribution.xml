@@ -8,7 +8,7 @@
     <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
     <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
     <allowed-os-versions>
-        <os-version min="26.0"/>
+        <os-version min="27.0"/>
     </allowed-os-versions>
     <choices-outline>
         <line choice="default">
