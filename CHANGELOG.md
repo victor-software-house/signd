@@ -1,5 +1,10 @@
 # Changelog
 
+## signd 0.0.21
+
+- `signd tls list` shows each TLS identity: its name, the subject, issuer and expiry of its leaf, and its chain length.
+  Add `--json` to print the same fields as JSON ([`22c772e`](https://github.com/victor-software-house/signd/commit/22c772e2aa6decbe86f3ec94396c1180cbb62f7b)).
+
 ## signd 0.0.20
 
 - `signd tls` makes TLS client identities.
