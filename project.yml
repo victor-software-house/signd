@@ -4,7 +4,7 @@ include:
 options:
   bundleIdPrefix: com.victor-software-house
   deploymentTarget:
-    macOS: "26.0"
+    macOS: "27.0"
   createIntermediateGroups: true
 packages:
   signd:

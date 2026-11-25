@@ -11,19 +11,21 @@ let strict: [SwiftSetting] = [
 
 let package = Package(
     name: "signd",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v27)],
     products: [
         .executable(name: "signd", targets: ["signd"]),
         .library(name: "SigndCLI", targets: ["SigndCLI"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-nio.git", exact: "2.105.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", exact: "2.105.2"),
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
-        .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.4"),
+        .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.5"),
+        .package(url: "https://github.com/apple/swift-certificates.git", exact: "1.21.2"),
         .package(url: "https://github.com/tuist/Noora.git", exact: "0.57.7"),
         .package(url: "https://github.com/onevcat/Rainbow.git", exact: "4.2.2"),
         .package(url: "https://github.com/victor-software-house/swift-onepassword.git", exact: "0.0.4"),
+        .package(url: "https://github.com/victor-software-house/swift-daemon-services.git", exact: "0.0.1"),
     ],
     targets: [
         // The SSH encoding of keys and signatures, with no platform code.
@@ -71,8 +73,11 @@ let package = Package(
             dependencies: [
                 "AgentServer", "AgentProtocol", "Backup", "KeyStore", "SSHEncoding", "Sync", "Updates",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "KeychainIdentity", package: "swift-daemon-services"),
                 .product(name: "Noora", package: "Noora"),
                 .product(name: "Rainbow", package: "Rainbow"),
+                .product(name: "SwiftASN1", package: "swift-asn1"),
+                .product(name: "X509", package: "swift-certificates"),
             ],
             swiftSettings: strict
         ),
@@ -87,7 +92,10 @@ let package = Package(
                 "SSHEncoding", "AgentProtocol", "Backup", "KeyStore", "AgentServer", "Sync", "Updates", "SigndCLI",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "CryptoExtras", package: "swift-crypto"),
+                .product(name: "KeychainIdentity", package: "swift-daemon-services"),
                 .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "SwiftASN1", package: "swift-asn1"),
+                .product(name: "X509", package: "swift-certificates"),
             ],
             resources: [.copy("Fixtures")],
             swiftSettings: strict
