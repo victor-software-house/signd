@@ -19,7 +19,7 @@ public struct Signd: ParsableCommand {
     public static let configuration = CommandConfiguration(
         abstract: "An SSH agent for keys only its signed app can use, shared through iCloud.",
         version: signdVersion,
-        subcommands: [KeyCommand.self, DeviceCommand.self, BackupCommand.self, SyncNow.self, UpdateNow.self, Status.self, Config.self, Service.self, Serve.self, UpdaterDaemon.self, Postinstall.self]
+        subcommands: [KeyCommand.self, TLSCommand.self, DeviceCommand.self, BackupCommand.self, SyncNow.self, UpdateNow.self, Status.self, Config.self, Service.self, Serve.self, UpdaterDaemon.self, Postinstall.self]
     )
 }
 
