@@ -158,7 +158,7 @@ final class AcceptErrorFilter: ChannelInboundHandler, Sendable {
             context.fireErrorCaught(error)
             return
         }
-        log.debug("dropped an accept error: \(String(describing: error), privacy: .public)")
+        log.notice("a client closed its connection before the accept finished, as OpenSSH's agent check does: \(String(describing: error), privacy: .public)")
     }
 }
 
@@ -228,6 +228,7 @@ public struct Server: Sendable {
             group.addTask { try await sweep() }
             try await server.executeThenClose { inbound in
                 for try await connection in inbound {
+                    guard let connection else { continue }
                     group.addTask { await serve(connection) }
                 }
             }
@@ -235,19 +236,35 @@ public struct Server: Sendable {
     }
 
     /// Accepts a connection only from a process of this user.
-    private static func accept(_ channel: any Channel) -> EventLoopFuture<Accepted> {
+    ///
+    /// The future never fails: a failed future would leave the child channel open, because the async channel ignores it.
+    /// A connection that cannot be accepted is closed and logged, and the future succeeds with nil.
+    private static func accept(_ channel: any Channel) -> EventLoopFuture<Accepted?> {
         guard let provider = channel as? any SocketOptionProvider else {
-            return channel.eventLoop.makeFailedFuture(OtherUser())
+            log.error("dropped a connection: its channel has no socket options")
+            channel.close(promise: nil)
+            return channel.eventLoop.makeSucceededFuture(nil)
         }
         let credentials: EventLoopFuture<xucred> = provider.unsafeGetSocketOption(level: SOL_LOCAL, name: LOCAL_PEERCRED)
         let peer: EventLoopFuture<pid_t> = provider.unsafeGetSocketOption(level: SOL_LOCAL, name: LOCAL_PEERPID)
-        return credentials.and(peer).flatMapThrowing { credentials, pid in
+        return credentials.and(peer).flatMapThrowing { credentials, pid -> Accepted? in
             guard credentials.cr_uid == getuid() else {
                 log.error("refused a connection from uid \(credentials.cr_uid)")
                 throw OtherUser()
             }
             try channel.pipeline.syncOperations.addHandler(ByteToMessageHandler(FrameDecoder()))
             return Accepted(channel: try NIOAsyncChannel<ByteBuffer, ByteBuffer>(wrappingChannelSynchronously: channel), peerPID: pid)
+        }.flatMapError { error in
+            switch error {
+            case is OtherUser:
+                break
+            case let error as IOError where error.errnoCode == ENOTCONN:
+                log.notice("dropped a connection: the client closed before its credentials were read")
+            default:
+                log.error("dropped a connection: it could not be set up: \(String(describing: error), privacy: .public)")
+            }
+            channel.close(promise: nil)
+            return channel.eventLoop.makeSucceededFuture(nil)
         }
     }
 
@@ -264,7 +281,7 @@ public struct Server: Sendable {
                 }
             }
         } catch {
-            log.debug("connection closed: \(String(describing: error), privacy: .public)")
+            log.error("a connection ended with an error: \(String(describing: error), privacy: .public)")
         }
     }
 
