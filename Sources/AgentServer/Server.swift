@@ -190,8 +190,11 @@ public struct Server: Sendable {
     }
 
     /// Fires an accept failure through `channel`'s pipeline, as SwiftNIO does when `fcntl` fails on an accepted socket.
+    /// SwiftNIO gives `NIOFcntlFailedError` no public initializer.
+    /// The error has no stored properties, and the empty tuple has the same layout.
     static func failAccept(on channel: any Channel) async throws {
-        try await channel.eventLoop.submit { channel.pipeline.fireErrorCaught(NIOFcntlFailedError()) }.get()
+        let error = unsafeBitCast((), to: NIOFcntlFailedError.self)
+        try await channel.eventLoop.submit { channel.pipeline.fireErrorCaught(error) }.get()
     }
 
     /// Serves like `run`, and passes the server channel to `onListening` once the socket is bound.
