@@ -129,9 +129,20 @@ struct FrameDecoder: ByteToMessageDecoder {
 /// Drops the accept error that SwiftNIO reports through the server channel's pipeline and survives.
 ///
 /// On Darwin, `fcntl` on an accepted socket fails with an invalid argument error (EINVAL) when the client has already closed it.
+/// SwiftNIO sets `F_SETNOSIGPIPE` on each accepted socket.
+/// The macOS kernel, XNU (X is Not Unix), turns that [`fcntl`](https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/bsd/kern/kern_descrip.c#L2944) into a socket option.
+/// Its [`sosetoptlock`](https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/bsd/kern/uipc_socket.c#L4734) refuses every option on a socket shut down both ways.
+///
 /// SwiftNIO reports `NIOFcntlFailedError` and keeps the server channel open.
 /// The reports are [ServerSocketChannel behaves non-sensical if fcntl on accepted socket returns EINVAL](https://github.com/apple/swift-nio/issues/1030)
 /// and [Recover from EINVAL even if the error is untyped](https://github.com/apple/swift-nio/issues/1598).
+///
+/// OpenSSH's client closes such a connection on every session with agent forwarding.
+/// Its [`check_agent_present`](https://github.com/openbsd/src/blob/545f3e295330470a61149b3b530d1e2138fdba33/usr.bin/ssh/ssh.c#L2165) calls [`ssh_get_authentication_socket`](https://github.com/openbsd/src/blob/545f3e295330470a61149b3b530d1e2138fdba33/usr.bin/ssh/authfd.c#L120) with no descriptor to keep.
+/// [`ssh_get_authentication_socket_path`](https://github.com/openbsd/src/blob/545f3e295330470a61149b3b530d1e2138fdba33/usr.bin/ssh/authfd.c#L87) then connects to the agent socket and closes it at once.
+///
+/// Each `ssh -A` session that dtrace watched made one such connection, which sent no request and closed after about 10 µs.
+/// The agent's accept then got EINVAL (2026-11-26).
 ///
 /// The error still reaches the async channel's handler at the end of the pipeline.
 /// That handler ends the inbound sequence, so `run` throws and the agent exits.
@@ -147,7 +158,7 @@ final class AcceptErrorFilter: ChannelInboundHandler, Sendable {
             context.fireErrorCaught(error)
             return
         }
-        log.debug("dropped an accept error: \(String(describing: error), privacy: .public)")
+        log.notice("a client closed its connection before the accept finished, as OpenSSH's agent check does: \(String(describing: error), privacy: .public)")
     }
 }
 
@@ -217,6 +228,7 @@ public struct Server: Sendable {
             group.addTask { try await sweep() }
             try await server.executeThenClose { inbound in
                 for try await connection in inbound {
+                    guard let connection else { continue }
                     group.addTask { await serve(connection) }
                 }
             }
@@ -224,19 +236,35 @@ public struct Server: Sendable {
     }
 
     /// Accepts a connection only from a process of this user.
-    private static func accept(_ channel: any Channel) -> EventLoopFuture<Accepted> {
+    ///
+    /// The future never fails: a failed future would leave the child channel open, because the async channel ignores it.
+    /// A connection that cannot be accepted is closed and logged, and the future succeeds with nil.
+    private static func accept(_ channel: any Channel) -> EventLoopFuture<Accepted?> {
         guard let provider = channel as? any SocketOptionProvider else {
-            return channel.eventLoop.makeFailedFuture(OtherUser())
+            log.error("dropped a connection: its channel has no socket options")
+            channel.close(promise: nil)
+            return channel.eventLoop.makeSucceededFuture(nil)
         }
         let credentials: EventLoopFuture<xucred> = provider.unsafeGetSocketOption(level: SOL_LOCAL, name: LOCAL_PEERCRED)
         let peer: EventLoopFuture<pid_t> = provider.unsafeGetSocketOption(level: SOL_LOCAL, name: LOCAL_PEERPID)
-        return credentials.and(peer).flatMapThrowing { credentials, pid in
+        return credentials.and(peer).flatMapThrowing { credentials, pid -> Accepted? in
             guard credentials.cr_uid == getuid() else {
                 log.error("refused a connection from uid \(credentials.cr_uid)")
                 throw OtherUser()
             }
             try channel.pipeline.syncOperations.addHandler(ByteToMessageHandler(FrameDecoder()))
             return Accepted(channel: try NIOAsyncChannel<ByteBuffer, ByteBuffer>(wrappingChannelSynchronously: channel), peerPID: pid)
+        }.flatMapError { error in
+            switch error {
+            case is OtherUser:
+                break
+            case let error as IOError where error.errnoCode == ENOTCONN:
+                log.notice("dropped a connection: the client closed before its credentials were read")
+            default:
+                log.error("dropped a connection: it could not be set up: \(String(describing: error), privacy: .public)")
+            }
+            channel.close(promise: nil)
+            return channel.eventLoop.makeSucceededFuture(nil)
         }
     }
 
@@ -253,7 +281,7 @@ public struct Server: Sendable {
                 }
             }
         } catch {
-            log.debug("connection closed: \(String(describing: error), privacy: .public)")
+            log.error("a connection ended with an error: \(String(describing: error), privacy: .public)")
         }
     }
 

@@ -304,17 +304,31 @@ private func timeSignatures(socketPath: String, blob: Data, count: Int) -> [Dura
     }
 }
 
-/// Asks for the identities over a real Unix socket and returns the type of the reply, or nil when the agent does not answer.
-private func identitiesReplyType(socketPath: String) -> UInt8? {
+/// Connects to the agent's Unix socket and returns the descriptor, or nil when the connection fails.
+private func connectToAgent(socketPath: String) -> Int32? {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-    defer { close(fd) }
     var address = sockaddr_un()
     address.sun_family = sa_family_t(AF_UNIX)
     withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: Array(socketPath.utf8)) }
     let connected = withUnsafePointer(to: &address) {
         $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
     }
-    guard connected == 0 else { return nil }
+    guard connected == 0 else {
+        close(fd)
+        return nil
+    }
+    return fd
+}
+
+/// The number of descriptors this process has open.
+private func openDescriptorCount() -> Int {
+    (try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count) ?? 0
+}
+
+/// Asks for the identities over a real Unix socket and returns the type of the reply, or nil when the agent does not answer.
+private func identitiesReplyType(socketPath: String) -> UInt8? {
+    guard let fd = connectToAgent(socketPath: socketPath) else { return nil }
+    defer { close(fd) }
 
     var request = Data()
     request.appendString(Data([MessageType.requestIdentities.rawValue]))
@@ -346,6 +360,41 @@ private func identitiesReplyType(socketPath: String) -> UInt8? {
         let channel = try #require(await listening.first { _ in true })
 
         try await Server.failAccept(on: channel)
+
+        let reply = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async { continuation.resume(returning: identitiesReplyType(socketPath: path)) }
+        }
+        #expect(reply == MessageType.identitiesAnswer.rawValue)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func theServerKeepsAcceptingAndReleasesClientsThatCloseAtOnce() async throws {
+        let agent = await makeAgent(MemoryStore())
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("accept-\(UUID().uuidString.prefix(6))")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("agent").path
+        let (listening, announce) = AsyncStream.makeStream(of: (any Channel).self)
+        let server = Task { try await Server(agent: agent).listen(socketPath: path) { announce.yield($0) } }
+        defer { server.cancel() }
+        _ = try #require(await listening.first { _ in true })
+
+        let before = openDescriptorCount()
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                DispatchQueue.concurrentPerform(iterations: 2000) { _ in
+                    if let fd = connectToAgent(socketPath: path) { close(fd) }
+                }
+                continuation.resume()
+            }
+        }
+
+        // The server closes each dropped connection on its event loop, after the clients are gone.
+        let margin = 16
+        var after = openDescriptorCount()
+        for _ in 0..<100 where after > before + margin {
+            try await Task.sleep(for: .milliseconds(100))
+            after = openDescriptorCount()
+        }
+        #expect(after <= before + margin, "\(before) descriptors were open before the clients, \(after) after")
 
         let reply = await withCheckedContinuation { continuation in
             DispatchQueue.global().async { continuation.resume(returning: identitiesReplyType(socketPath: path)) }
