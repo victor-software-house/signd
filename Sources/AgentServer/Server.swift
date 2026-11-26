@@ -126,6 +126,31 @@ struct FrameDecoder: ByteToMessageDecoder {
     }
 }
 
+/// Drops the accept error that SwiftNIO reports through the server channel's pipeline and survives.
+///
+/// On Darwin, `fcntl` on an accepted socket fails with an invalid argument error (EINVAL) when the client has already closed it.
+/// SwiftNIO reports `NIOFcntlFailedError` and keeps the server channel open.
+/// The reports are [ServerSocketChannel behaves non-sensical if fcntl on accepted socket returns EINVAL](https://github.com/apple/swift-nio/issues/1030)
+/// and [Recover from EINVAL even if the error is untyped](https://github.com/apple/swift-nio/issues/1598).
+///
+/// The error still reaches the async channel's handler at the end of the pipeline.
+/// That handler ends the inbound sequence, so `run` throws and the agent exits.
+///
+/// The `IOError`s that SwiftNIO also survives, such as `EMFILE`, never get that far.
+/// The async `bind` adds an `AcceptBackoffHandler` that backs off and does not forward them.
+/// This handler therefore leaves them, and every other error, alone.
+final class AcceptErrorFilter: ChannelInboundHandler, Sendable {
+    typealias InboundIn = NIOAny
+
+    func errorCaught(context: ChannelHandlerContext, error: any Error) {
+        guard error is NIOFcntlFailedError else {
+            context.fireErrorCaught(error)
+            return
+        }
+        log.debug("dropped an accept error: \(String(describing: error), privacy: .public)")
+    }
+}
+
 /// Serves the agent on a Unix socket.
 public struct Server: Sendable {
     let agent: Agent
@@ -161,16 +186,30 @@ public struct Server: Sendable {
 
     /// Listens on `path` until the task is cancelled.
     public func run(socketPath path: String) async throws {
+        try await listen(socketPath: path, onListening: nil)
+    }
+
+    /// Fires an accept failure through `channel`'s pipeline, as SwiftNIO does when `fcntl` fails on an accepted socket.
+    static func failAccept(on channel: any Channel) async throws {
+        try await channel.eventLoop.submit { channel.pipeline.fireErrorCaught(NIOFcntlFailedError()) }.get()
+    }
+
+    /// Serves like `run`, and passes the server channel to `onListening` once the socket is bound.
+    func listen(socketPath path: String, onListening: (@Sendable (any Channel) -> Void)?) async throws {
         await agent.reload()
         await sync?.start()
         let directory = (path as NSString).deletingLastPathComponent
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let server = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
+            .serverChannelInitializer { channel in
+                channel.pipeline.addHandler(AcceptErrorFilter())
+            }
             .bind(unixDomainSocketPath: path, cleanupExistingSocketFile: true) { channel in
                 Self.accept(channel)
             }
         chmod(path, 0o600)
         log.notice("serving \(path, privacy: .public)")
+        onListening?(server.channel)
         try await withThrowingDiscardingTaskGroup { group in
             group.addTask { try await sweep() }
             try await server.executeThenClose { inbound in
