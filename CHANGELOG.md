@@ -1,5 +1,9 @@
 # Changelog
 
+## signd 0.0.23
+
+- The agent keeps running when a client closes its socket right after it connects ([`347c2c2`](https://github.com/victor-software-house/signd/commit/347c2c22b27bbd6592b361a565767baa32ada72d)).
+
 ## signd 0.0.22
 
 - The installer package now needs macOS 27, as the app does.
