@@ -4,6 +4,7 @@ import CryptoKit
 import Darwin
 import Foundation
 import KeyStore
+import NIOCore
 import Synchronization
 import SSHEncoding
 import Testing
@@ -300,5 +301,55 @@ private func timeSignatures(socketPath: String, blob: Data, count: Int) -> [Dura
         let median = try #require(warm.isEmpty ? nil : warm[warm.count / 2])
         print("WARM p50", median)
         #expect(median < .milliseconds(1), "p50 was \(median)")
+    }
+}
+
+/// Asks for the identities over a real Unix socket and returns the type of the reply, or nil when the agent does not answer.
+private func identitiesReplyType(socketPath: String) -> UInt8? {
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    defer { close(fd) }
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: Array(socketPath.utf8)) }
+    let connected = withUnsafePointer(to: &address) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+    }
+    guard connected == 0 else { return nil }
+
+    var request = Data()
+    request.appendString(Data([MessageType.requestIdentities.rawValue]))
+    guard request.withUnsafeBytes({ write(fd, $0.baseAddress, $0.count) }) == request.count else { return nil }
+
+    func readAll(_ count: Int) -> Data? {
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: count)
+        while data.count < count {
+            let n = read(fd, &buffer, count - data.count)
+            guard n > 0 else { return nil }
+            data.append(contentsOf: buffer[0..<n])
+        }
+        return data
+    }
+    guard let header = readAll(4), let reply = readAll(header.reduce(0) { $0 << 8 | Int($1) }) else { return nil }
+    return reply.first
+}
+
+@Suite struct AcceptErrors {
+    @Test(.timeLimit(.minutes(1))) func theServerKeepsAcceptingAfterAFailedFcntl() async throws {
+        let agent = await makeAgent(MemoryStore())
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("accept-\(UUID().uuidString.prefix(6))")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("agent").path
+        let (listening, announce) = AsyncStream.makeStream(of: (any Channel).self)
+        let server = Task { try await Server(agent: agent).listen(socketPath: path) { announce.yield($0) } }
+        defer { server.cancel() }
+        let channel = try #require(await listening.first { _ in true })
+
+        try await Server.failAccept(on: channel)
+
+        let reply = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async { continuation.resume(returning: identitiesReplyType(socketPath: path)) }
+        }
+        #expect(reply == MessageType.identitiesAnswer.rawValue)
     }
 }
