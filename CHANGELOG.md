@@ -1,5 +1,9 @@
 # Changelog
 
+## signd 0.0.24
+
+- The agent closes a connection it cannot set up and logs why ([`e912137`](https://github.com/victor-software-house/signd/commit/e912137baadc25b2039015453e7d21906e0b8bcc)).
+
 ## signd 0.0.23
 
 - The agent keeps running when a client closes its socket right after it connects ([`347c2c2`](https://github.com/victor-software-house/signd/commit/347c2c22b27bbd6592b361a565767baa32ada72d)).
