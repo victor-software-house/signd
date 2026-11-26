@@ -2,4 +2,4 @@
 // change the template, never this file.
 
 /// The released version, which `signd --version` prints.
-let signdVersion = "0.0.22"
+let signdVersion = "0.0.23"
