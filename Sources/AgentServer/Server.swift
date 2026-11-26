@@ -129,9 +129,15 @@ struct FrameDecoder: ByteToMessageDecoder {
 /// Drops the accept error that SwiftNIO reports through the server channel's pipeline and survives.
 ///
 /// On Darwin, `fcntl` on an accepted socket fails with an invalid argument error (EINVAL) when the client has already closed it.
+/// SwiftNIO sets `F_SETNOSIGPIPE` on each accepted socket, and the macOS kernel's `sosetoptlock` refuses every option on a socket shut down both ways.
+///
 /// SwiftNIO reports `NIOFcntlFailedError` and keeps the server channel open.
 /// The reports are [ServerSocketChannel behaves non-sensical if fcntl on accepted socket returns EINVAL](https://github.com/apple/swift-nio/issues/1030)
 /// and [Recover from EINVAL even if the error is untyped](https://github.com/apple/swift-nio/issues/1598).
+///
+/// OpenSSH's client closes such a connection on every session with agent forwarding.
+/// Its `check_agent_present` connects to the agent socket and closes it at once, about 10 µs later, with no request.
+/// A dtrace of `ssh -A` caught one such connection per session, and the agent's accept got EINVAL after it (2026-11-26).
 ///
 /// The error still reaches the async channel's handler at the end of the pipeline.
 /// That handler ends the inbound sequence, so `run` throws and the agent exits.
