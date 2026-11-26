@@ -129,15 +129,20 @@ struct FrameDecoder: ByteToMessageDecoder {
 /// Drops the accept error that SwiftNIO reports through the server channel's pipeline and survives.
 ///
 /// On Darwin, `fcntl` on an accepted socket fails with an invalid argument error (EINVAL) when the client has already closed it.
-/// SwiftNIO sets `F_SETNOSIGPIPE` on each accepted socket, and the macOS kernel's `sosetoptlock` refuses every option on a socket shut down both ways.
+/// SwiftNIO sets `F_SETNOSIGPIPE` on each accepted socket.
+/// The macOS kernel, XNU (X is Not Unix), turns that [`fcntl`](https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/bsd/kern/kern_descrip.c#L2944) into a socket option.
+/// Its [`sosetoptlock`](https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/bsd/kern/uipc_socket.c#L4734) refuses every option on a socket shut down both ways.
 ///
 /// SwiftNIO reports `NIOFcntlFailedError` and keeps the server channel open.
 /// The reports are [ServerSocketChannel behaves non-sensical if fcntl on accepted socket returns EINVAL](https://github.com/apple/swift-nio/issues/1030)
 /// and [Recover from EINVAL even if the error is untyped](https://github.com/apple/swift-nio/issues/1598).
 ///
 /// OpenSSH's client closes such a connection on every session with agent forwarding.
-/// Its `check_agent_present` connects to the agent socket and closes it at once, about 10 µs later, with no request.
-/// A dtrace of `ssh -A` caught one such connection per session, and the agent's accept got EINVAL after it (2026-11-26).
+/// Its [`check_agent_present`](https://github.com/openbsd/src/blob/545f3e295330470a61149b3b530d1e2138fdba33/usr.bin/ssh/ssh.c#L2165) calls [`ssh_get_authentication_socket`](https://github.com/openbsd/src/blob/545f3e295330470a61149b3b530d1e2138fdba33/usr.bin/ssh/authfd.c#L120) with no descriptor to keep.
+/// [`ssh_get_authentication_socket_path`](https://github.com/openbsd/src/blob/545f3e295330470a61149b3b530d1e2138fdba33/usr.bin/ssh/authfd.c#L87) then connects to the agent socket and closes it at once.
+///
+/// Each `ssh -A` session that dtrace watched made one such connection, which sent no request and closed after about 10 µs.
+/// The agent's accept then got EINVAL (2026-11-26).
 ///
 /// The error still reaches the async channel's handler at the end of the pipeline.
 /// That handler ends the inbound sequence, so `run` throws and the agent exits.
